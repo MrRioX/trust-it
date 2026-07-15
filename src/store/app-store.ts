@@ -284,16 +284,8 @@ export const useApp = create<AppState>((set, get) => ({
         return false
       }
       set({ user: data.user })
-      // If user registered with UID, go straight to main
-      if (data.user.uid) {
-        set({ view: 'main' })
-        await get().ensureKeyPair()
-        get().connectSocket()
-        await Promise.all([get().refreshFriends(), get().refreshRequests()])
-      } else {
-        // No UID set → go to setup
-        set({ view: 'setup-uid' })
-      }
+      // After registration, go to UID setup (profile setup screen)
+      set({ view: 'setup-uid' })
       return true
     } catch (e) {
       console.error('register error', e)

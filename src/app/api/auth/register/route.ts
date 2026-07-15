@@ -13,19 +13,16 @@ export async function POST(req: NextRequest) {
       uid?: string
     }
 
-    if (!email || !phone || !password) {
-      return NextResponse.json({ error: 'Email, phone, and password are required' }, { status: 400 })
-    }
-
-    const emailNorm = email.trim().toLowerCase()
-    const phoneNorm = phone.trim()
-
-    if (!/^\S+@\S+\.\S+$/.test(emailNorm)) {
-      return NextResponse.json({ error: 'Invalid email format' }, { status: 400 })
-    }
-    if (password.length < 6) {
+    if (!password || password.length < 6) {
       return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
     }
+
+    if (!email && !phone) {
+      return NextResponse.json({ error: 'Email or phone is required' }, { status: 400 })
+    }
+
+    const emailNorm = email ? email.trim().toLowerCase() : null
+    const phoneNorm = phone ? phone.trim() : null
 
     // Validate UID if provided
     let uidNorm: string | null = null
@@ -40,17 +37,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const existing = await db.user.findFirst({
-      where: { OR: [{ email: emailNorm }, { phone: phoneNorm }] },
-    })
-    if (existing) {
-      return NextResponse.json({ error: 'Email or phone already registered' }, { status: 409 })
+    // Check existing email/phone
+    if (emailNorm) {
+      const e = await db.user.findUnique({ where: { email: emailNorm } })
+      if (e) return NextResponse.json({ error: 'Email already registered' }, { status: 409 })
+    }
+    if (phoneNorm) {
+      const p = await db.user.findUnique({ where: { phone: phoneNorm } })
+      if (p) return NextResponse.json({ error: 'Phone already registered' }, { status: 409 })
     }
 
     const user = await db.user.create({
       data: {
-        email: emailNorm,
-        phone: phoneNorm,
+        email: emailNorm || `phone_${phoneNorm}@trustit.local`, // fallback email if only phone
+        phone: phoneNorm || '0000000000',
         passwordHash: hashPassword(password),
         displayName: displayName?.trim() || null,
         uid: uidNorm,

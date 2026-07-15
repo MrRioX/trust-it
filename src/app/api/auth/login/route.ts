@@ -12,8 +12,16 @@ export async function POST(req: NextRequest) {
     }
 
     const idNorm = identifier.trim().toLowerCase()
+
+    // Try by email, phone, or UID
     const user = await db.user.findFirst({
-      where: { OR: [{ email: idNorm }, { phone: identifier.trim() }] },
+      where: {
+        OR: [
+          { email: idNorm },
+          { phone: identifier.trim() },
+          { uid: idNorm },
+        ],
+      },
     })
 
     if (!user || !verifyPassword(password, user.passwordHash)) {
@@ -39,6 +47,6 @@ export async function POST(req: NextRequest) {
     return res
   } catch (e: any) {
     console.error('login error', e)
-    return NextResponse.json({ error: e?.message || 'Server error', stack: e?.stack?.slice(0, 200) }, { status: 500 })
+    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }
 }
