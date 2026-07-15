@@ -1,0 +1,80 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String   @id @default(cuid())
+  email                String   @unique
+  phone                String   @unique
+  passwordHash         String
+  uid                  String?  @unique
+  displayName          String?
+  avatarColor          String   @default("#6366f1")
+  bio                  String?
+  publicKey            String?
+  profileImageMediaId  String?  // references an encrypted blob in /uploads
+  lastSeen             DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  sentRequests     FriendRequest[] @relation("FromUser")
+  receivedRequests FriendRequest[] @relation("ToUser")
+  sentMessages     Message[]       @relation("Sender")
+  chatBackgrounds  ChatBackground[]
+}
+
+model FriendRequest {
+  id        String   @id @default(cuid())
+  fromId    String
+  toId      String
+  status    String   @default("pending") // pending | accepted | declined
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fromUser User @relation("FromUser", fields: [fromId], references: [id])
+  toUser   User @relation("ToUser", fields: [toId], references: [id])
+
+  @@unique([fromId, toId])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  roomId         String // sorted combination of two user IDs: "uidA__uidB"
+  senderId       String
+  encryptedData  String // base64 of encrypted payload (iv + ciphertext)
+  type           String   @default("text") // text | image | video
+  mediaId        String?  // for image/video, references stored encrypted blob
+  seenAt         DateTime? // when the recipient first saw this message
+  replyToId      String?  // ID of message this is replying to (for quoted replies)
+  replyToSnippet String?  // short preview of the replied message (encrypted text or media marker)
+  replyToSender  String?  // sender ID of the replied message (so we can show "Replying to X")
+  reaction       String?  // emoji reaction (e.g. "❤️", "😂", "🔥")
+  reactionBy     String?  // user ID who reacted
+  createdAt      DateTime @default(now())
+
+  sender User @relation("Sender", fields: [senderId], references: [id])
+
+  @@index([roomId, createdAt])
+}
+
+model ChatBackground {
+  id        String   @id @default(cuid())
+  userId    String
+  roomId    String
+  bgType    String   @default("default") // default | gradient | pattern | solid
+  bgValue   String   @default("") // css value or preset name
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, roomId])
+}

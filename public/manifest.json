@@ -1,0 +1,40 @@
+{
+  "name": "Trust It — Encrypted Messenger",
+  "short_name": "Trust It",
+  "description": "Send end-to-end encrypted messages, images, and videos. Find friends by UID only.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#d946ef",
+  "categories": ["communication", "social", "security"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    { "src": "/icons/icon-16x16.png", "sizes": "16x16", "type": "image/png" },
+    { "src": "/icons/icon-32x32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "/icons/icon-60x60.png", "sizes": "60x60", "type": "image/png" },
+    { "src": "/icons/icon-76x76.png", "sizes": "76x76", "type": "image/png" },
+    { "src": "/icons/icon-120x120.png", "sizes": "120x120", "type": "image/png" },
+    { "src": "/icons/icon-152x152.png", "sizes": "152x152", "type": "image/png" },
+    { "src": "/icons/icon-167x167.png", "sizes": "167x167", "type": "image/png" },
+    { "src": "/icons/icon-180x180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/icons/icon-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-256x256.png", "sizes": "256x256", "type": "image/png" },
+    { "src": "/icons/icon-384x384.png", "sizes": "384x384", "type": "image/png" },
+    { "src": "/icons/icon-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/maskable-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Add Friend",
+      "short_name": "Add",
+      "description": "Find and add a friend by UID",
+      "url": "/?action=add-friend",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}

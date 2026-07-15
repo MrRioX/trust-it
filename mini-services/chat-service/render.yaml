@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: trust-it-chat
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    healthCheckPath: /
+    autoDeploy: true
