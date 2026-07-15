@@ -59,8 +59,8 @@ export async function POST(req: NextRequest) {
     })
     res.cookies.set(setSessionCookie(token))
     return res
-  } catch (e) {
+  } catch (e: any) {
     console.error('register error', e)
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    return NextResponse.json({ error: e?.message || 'Server error', stack: e?.stack?.slice(0, 200) }, { status: 500 })
   }
 }
