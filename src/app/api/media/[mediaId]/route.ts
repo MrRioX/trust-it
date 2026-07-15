@@ -4,7 +4,7 @@ import { readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
 
-const UPLOAD_DIR = '/home/z/trust-it-data/uploads'
+const UPLOAD_DIR = process.env.NODE_ENV === 'production' ? '/tmp/uploads' : '/home/z/trust-it-data/uploads'
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ mediaId: string }> }) {
   const me = await getCurrentUser()

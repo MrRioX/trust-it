@@ -6,7 +6,7 @@ import { existsSync } from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 
-const UPLOAD_DIR = '/home/z/trust-it-data/uploads'
+const UPLOAD_DIR = process.env.NODE_ENV === 'production' ? '/tmp/uploads' : '/home/z/trust-it-data/uploads'
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser()
