@@ -119,7 +119,7 @@ interface AppState {
   // init
   init: () => Promise<void>
   // auth
-  register: (data: { email: string; phone: string; password: string; displayName?: string }) => Promise<boolean>
+  register: (data: { email: string; phone: string; password: string; displayName?: string; uid?: string }) => Promise<boolean>
   login: (data: { identifier: string; password: string }) => Promise<boolean>
   logout: () => Promise<void>
 
@@ -269,12 +269,12 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
-  register: async ({ email, phone, password, displayName }) => {
+  register: async ({ email, phone, password, displayName, uid }) => {
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, phone, password, displayName }),
+        body: JSON.stringify({ email, phone, password, displayName, uid }),
       })
       const text = await res.text()
       let data: any = null
@@ -284,7 +284,16 @@ export const useApp = create<AppState>((set, get) => ({
         return false
       }
       set({ user: data.user })
-      set({ view: 'setup-uid' })
+      // If user registered with UID, go straight to main
+      if (data.user.uid) {
+        set({ view: 'main' })
+        await get().ensureKeyPair()
+        get().connectSocket()
+        await Promise.all([get().refreshFriends(), get().refreshRequests()])
+      } else {
+        // No UID set → go to setup
+        set({ view: 'setup-uid' })
+      }
       return true
     } catch (e) {
       console.error('register error', e)

@@ -5,11 +5,12 @@ import { createSessionToken, setSessionCookie, hashPassword } from '@/lib/auth'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { email, phone, password, displayName } = body as {
+    const { email, phone, password, displayName, uid } = body as {
       email?: string
       phone?: string
       password?: string
       displayName?: string
+      uid?: string
     }
 
     if (!email || !phone || !password) {
@@ -26,6 +27,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
     }
 
+    // Validate UID if provided
+    let uidNorm: string | null = null
+    if (uid && uid.trim()) {
+      uidNorm = uid.trim()
+      if (!/^[a-zA-Z0-9_]{3,20}$/.test(uidNorm)) {
+        return NextResponse.json({ error: 'UID must be 3-20 chars: letters, numbers, underscores' }, { status: 400 })
+      }
+      const uidTaken = await db.user.findUnique({ where: { uid: uidNorm } })
+      if (uidTaken) {
+        return NextResponse.json({ error: 'UID already taken' }, { status: 409 })
+      }
+    }
+
     const existing = await db.user.findFirst({
       where: { OR: [{ email: emailNorm }, { phone: phoneNorm }] },
     })
@@ -39,6 +53,7 @@ export async function POST(req: NextRequest) {
         phone: phoneNorm,
         passwordHash: hashPassword(password),
         displayName: displayName?.trim() || null,
+        uid: uidNorm,
       },
     })
 
@@ -61,6 +76,6 @@ export async function POST(req: NextRequest) {
     return res
   } catch (e: any) {
     console.error('register error', e)
-    return NextResponse.json({ error: e?.message || 'Server error', stack: e?.stack?.slice(0, 200) }, { status: 500 })
+    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }
 }
