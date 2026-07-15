@@ -11,10 +11,6 @@ datasource db {
   directUrl = env("DATABASE_URL")
 }
 
-// Required for PgBouncer (Supabase pooler) compatibility
-// https://www.prisma.io/docs/guides/working-with-supabase
-relationMode = "prisma"
-
 model User {
   id                   String   @id @default(cuid())
   email                String   @unique
