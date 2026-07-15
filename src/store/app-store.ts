@@ -961,20 +961,22 @@ export const useApp = create<AppState>((set, get) => ({
       set({ connected: false })
     })
     s.on('auth-ok', () => {
-      // Update my lastSeen on the server once on connect
+      // Update my lastSeen on the server on connect
       fetch('/api/users/lastseen', { method: 'POST' }).catch(() => {})
-      // Update lastSeen when the page is closed/hidden
+      // Update lastSeen every 10 seconds for high precision
       if (typeof window !== 'undefined') {
+        const interval = setInterval(() => {
+          fetch('/api/users/lastseen', { method: 'POST' }).catch(() => {})
+        }, 10000)
         const handleVisibilityChange = () => {
-          if (document.hidden) {
-            fetch('/api/users/lastseen', { method: 'POST' }).catch(() => {})
-          }
+          if (document.hidden) fetch('/api/users/lastseen', { method: 'POST' }).catch(() => {})
         }
         const handleBeforeUnload = () => {
           fetch('/api/users/lastseen', { method: 'POST' }).catch(() => {})
         }
         document.addEventListener('visibilitychange', handleVisibilityChange)
         window.addEventListener('beforeunload', handleBeforeUnload)
+        s.on('disconnect', () => clearInterval(interval))
       }
     })
 
