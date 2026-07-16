@@ -109,14 +109,21 @@ export function AuthScreen() {
   const setupRecaptcha = () => {
     if (!firebaseAuth || !isFirebaseConfigured) return false
     try {
-      if (!(window as any).recaptchaVerifier) {
-        const verifier = new RecaptchaVerifier(firebaseAuth, 'recaptcha-container', {
-          size: 'invisible',
-          callback: () => {},
-        })
-        ;(window as any).recaptchaVerifier = verifier
-        verifier.render().catch(() => {})
+      // Always clear existing reCAPTCHA before creating a new one
+      if ((window as any).recaptchaVerifier) {
+        try { (window as any).recaptchaVerifier.clear() } catch {}
+        ;(window as any).recaptchaVerifier = null
       }
+      // Clear the container DOM element too
+      const container = document.getElementById('recaptcha-container')
+      if (container) container.innerHTML = ''
+      // Create fresh verifier
+      const verifier = new RecaptchaVerifier(firebaseAuth, 'recaptcha-container', {
+        size: 'invisible',
+        callback: () => {},
+      })
+      ;(window as any).recaptchaVerifier = verifier
+      verifier.render().catch(() => {})
       return true
     } catch { return false }
   }
