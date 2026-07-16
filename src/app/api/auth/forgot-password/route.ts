@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hashPassword } from '@/lib/auth'
+import { sendSms } from '@/lib/sms'
 
 // In-memory OTP store for password reset
 const resetOtpStore = new Map<string, { code: string; expires: number }>()
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
     const action = url.searchParams.get('action') || 'send'
     const body = await req.json()
 
-    // Check if user exists (used before Firebase OTP for password reset)
+    // Check if user exists (used before sending the OTP for password reset)
     if (action === 'check') {
       const { identifier, type } = body as { identifier?: string; type?: 'email' | 'phone' }
       if (!identifier || !type) {
@@ -57,33 +58,10 @@ export async function POST(req: NextRequest) {
       let sendError = ''
 
       if (type === 'phone') {
-        const twilioSid = process.env.TWILIO_ACCOUNT_SID
-        const twilioToken = process.env.TWILIO_AUTH_TOKEN
-        const twilioFrom = process.env.TWILIO_PHONE_NUMBER
-
-        if (twilioSid && twilioToken && twilioFrom) {
-          try {
-            const twilioRes = await fetch(
-              `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': 'Basic ' + Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64'),
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({
-                  To: identifier.trim(),
-                  From: twilioFrom,
-                  Body: `Your Trust It password reset code is: ${code}`,
-                }),
-              }
-            )
-            if (twilioRes.ok) sent = true
-            else sendError = 'Twilio error'
-          } catch (e: any) { sendError = e?.message }
-        } else {
-          sendError = 'Twilio not configured'
-        }
+        // === Real SMS via self-hosted Android SMS Gateway (sms-gate.app) ===
+        const result = await sendSms(identifier.trim(), `Your Trust It password reset code is: ${code}`)
+        sent = result.ok
+        sendError = result.error || ''
       } else {
         const resendKey = process.env.RESEND_API_KEY
         if (resendKey) {
@@ -116,7 +94,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, message: 'Reset code sent', demoCode: code, deliveryError: sendError })
       }
     } else if (action === 'reset') {
-      // Reset password with OTP or Firebase verification
+      // Reset password with OTP
       const { identifier, code, newPassword } = body as { identifier?: string; code?: string; newPassword?: string }
 
       if (!identifier || !code || !newPassword) {
@@ -129,21 +107,18 @@ export async function POST(req: NextRequest) {
 
       const idNorm = identifier.trim().toLowerCase()
 
-      // If code is 'firebase-verified', skip OTP check (Firebase already verified it on client)
-      if (code !== 'firebase-verified') {
-        const stored = resetOtpStore.get(idNorm)
-        if (!stored) {
-          return NextResponse.json({ error: 'No reset code was sent. Please request a new code.' }, { status: 400 })
-        }
-        if (Date.now() > stored.expires) {
-          resetOtpStore.delete(idNorm)
-          return NextResponse.json({ error: 'Code expired. Please request a new one.' }, { status: 400 })
-        }
-        if (stored.code !== code.trim()) {
-          return NextResponse.json({ error: 'Invalid code' }, { status: 400 })
-        }
-        resetOtpStore.delete(idNorm)
+      const stored = resetOtpStore.get(idNorm)
+      if (!stored) {
+        return NextResponse.json({ error: 'No reset code was sent. Please request a new code.' }, { status: 400 })
       }
+      if (Date.now() > stored.expires) {
+        resetOtpStore.delete(idNorm)
+        return NextResponse.json({ error: 'Code expired. Please request a new one.' }, { status: 400 })
+      }
+      if (stored.code !== code.trim()) {
+        return NextResponse.json({ error: 'Invalid code' }, { status: 400 })
+      }
+      resetOtpStore.delete(idNorm)
 
       // Find user and update password
       const isEmail = identifier.includes('@')

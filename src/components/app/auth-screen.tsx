@@ -9,8 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Lock, Mail, Phone, User, ArrowLeft, ArrowRight, Loader2, Check, KeyRound } from 'lucide-react'
-import { firebaseAuth, isFirebaseConfigured } from '@/lib/firebase'
-import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from 'firebase/auth'
 
 const COUNTRY_CODES = [
   { code: '+91', country: 'India', flag: '🇮🇳' },
@@ -69,7 +67,6 @@ export function AuthScreen() {
   const [regPw, setRegPw] = useState('')
   const [regBusy, setRegBusy] = useState(false)
   const [error, setError] = useState('')
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null)
   const otpInputRef = useRef<HTMLInputElement>(null)
 
   // Forgot password
@@ -82,7 +79,6 @@ export function AuthScreen() {
   const [fpBusy, setFpBusy] = useState(false)
   const [fpDone, setFpDone] = useState(false)
   const [fpTimer, setFpTimer] = useState(0)
-  const [fpConfirmationResult, setFpConfirmationResult] = useState<ConfirmationResult | null>(null)
 
   useEffect(() => {
     if (otpTimer > 0) { const t = setTimeout(() => setOtpTimer(otpTimer - 1), 1000); return () => clearTimeout(t) }
@@ -106,28 +102,6 @@ export function AuthScreen() {
     return countryCode + regContact.replace(/\D/g, '')
   }
 
-  const setupRecaptcha = () => {
-    if (!firebaseAuth || !isFirebaseConfigured) return false
-    try {
-      // Always clear existing reCAPTCHA before creating a new one
-      if ((window as any).recaptchaVerifier) {
-        try { (window as any).recaptchaVerifier.clear() } catch {}
-        ;(window as any).recaptchaVerifier = null
-      }
-      // Clear the container DOM element too
-      const container = document.getElementById('recaptcha-container')
-      if (container) container.innerHTML = ''
-      // Create fresh verifier
-      const verifier = new RecaptchaVerifier(firebaseAuth, 'recaptcha-container', {
-        size: 'invisible',
-        callback: () => {},
-      })
-      ;(window as any).recaptchaVerifier = verifier
-      verifier.render().catch(() => {})
-      return true
-    } catch { return false }
-  }
-
   const handleSendOtp = async () => {
     setError('')
     if (!regContact.trim()) { setError('Please enter your email or phone number'); return }
@@ -136,39 +110,23 @@ export function AuthScreen() {
     const fullContact = type === 'phone' ? countryCode + regContact.replace(/\D/g, '') : regContact.trim().toLowerCase()
     setRegBusy(true)
 
-    if (type === 'phone') {
-      // === FIREBASE PHONE AUTH (real SMS, no fake) ===
-      if (!firebaseAuth || !isFirebaseConfigured) {
-        setError('Firebase is not configured. Add Firebase env vars on Vercel.')
-        setRegBusy(false)
-        return
+    // === OTP via server (SMS Gateway for phone, Resend for email) ===
+    try {
+      const res = await fetch('/api/auth/send-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: fullContact, type }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data?.error || 'Failed to send OTP')
+      } else if (data.demoCode) {
+        // Delivery service not configured — surface it rather than silently faking success
+        setError(
+          type === 'phone'
+            ? 'SMS Gateway not configured. Add SMSGATE_USERNAME/SMSGATE_PASSWORD on Vercel.'
+            : 'Email OTP service not configured. Add RESEND_API_KEY on Vercel, or use phone number instead.'
+        )
+      } else {
+        setStep(2); setOtpTimer(30)
       }
-      try {
-        setupRecaptcha()
-        const verifier = (window as any).recaptchaVerifier
-        if (!verifier) { setError('reCAPTCHA not ready. Please try again.'); setRegBusy(false); return }
-        const result = await signInWithPhoneNumber(firebaseAuth, fullContact, verifier)
-        setConfirmationResult(result)
-        setStep(2)
-        setOtpTimer(30)
-      } catch (e: any) {
-        setError(e?.message || 'Failed to send SMS. Make sure your number is correct.')
-        if ((window as any).recaptchaVerifier) { try { (window as any).recaptchaVerifier.clear() } catch {} (window as any).recaptchaVerifier = null }
-      }
-    } else {
-      // === EMAIL OTP via server (Resend) ===
-      try {
-        const res = await fetch('/api/auth/send-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: fullContact, type: 'email' }) })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) { setError(data?.error || 'Failed to send OTP') }
-        else if (data.demoCode) {
-          // Resend not configured — show error, don't fake it
-          setError('Email OTP service not configured. Add RESEND_API_KEY on Vercel, or use phone number instead.')
-        } else {
-          setStep(2); setOtpTimer(30)
-        }
-      } catch { setError('Network error') }
-    }
+    } catch { setError('Network error') }
     setRegBusy(false)
   }
 
@@ -177,23 +135,12 @@ export function AuthScreen() {
     if (otpCode.length !== 6) { setError('Please enter the 6-digit code'); return }
     setRegBusy(true)
 
-    if (contactType === 'phone' && confirmationResult) {
-      // Firebase verification (real)
-      try {
-        await confirmationResult.confirm(otpCode)
-        setStep(3)
-      } catch (e: any) {
-        setError(e?.message || 'Invalid code. Please try again.')
-      }
-    } else {
-      // Server-side verification (email)
-      try {
-        const res = await fetch('/api/auth/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: getFullContact(), code: otpCode }) })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) { setError(data?.error || 'Invalid code') }
-        else { setStep(3) }
-      } catch { setError('Network error') }
-    }
+    try {
+      const res = await fetch('/api/auth/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: getFullContact(), code: otpCode }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(data?.error || 'Invalid code') }
+      else { setStep(3) }
+    } catch { setError('Network error') }
     setRegBusy(false)
   }
 
@@ -222,36 +169,21 @@ export function AuthScreen() {
     const fullContact = type === 'phone' ? fpCountryCode + fpContact.replace(/\D/g, '') : fpContact.trim().toLowerCase()
     setFpBusy(true)
 
-    if (type === 'phone') {
-      // Firebase for phone reset
-      if (!firebaseAuth || !isFirebaseConfigured) {
-        setError('Firebase is not configured. Add Firebase env vars on Vercel.')
-        setFpBusy(false); return
-      }
-      try {
-        setupRecaptcha()
-        const verifier = (window as any).recaptchaVerifier
-        if (!verifier) { setError('reCAPTCHA not ready. Try again.'); setFpBusy(false); return }
-        // Check if user exists first
-        const checkRes = await fetch('/api/auth/forgot-password?action=check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: fullContact, type }) })
-        if (!checkRes.ok) { const d = await checkRes.json().catch(() => ({})); setError(d?.error || 'No account found'); setFpBusy(false); return }
-        const result = await signInWithPhoneNumber(firebaseAuth, fullContact, verifier)
-        setFpConfirmationResult(result)
+    try {
+      const res = await fetch('/api/auth/forgot-password?action=send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: fullContact, type }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data?.error || 'Failed')
+      } else if (data.demoCode) {
+        setError(
+          type === 'phone'
+            ? 'SMS Gateway not configured. Add SMSGATE_USERNAME/SMSGATE_PASSWORD on Vercel.'
+            : 'Email OTP not configured. Use phone number instead.'
+        )
+      } else {
         setFpStep(2); setFpTimer(30)
-      } catch (e: any) {
-        setError(e?.message || 'Failed to send SMS')
-        if ((window as any).recaptchaVerifier) { try { (window as any).recaptchaVerifier.clear() } catch {} (window as any).recaptchaVerifier = null }
       }
-    } else {
-      // Email via server
-      try {
-        const res = await fetch('/api/auth/forgot-password?action=send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: fullContact, type: 'email' }) })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) { setError(data?.error || 'Failed') }
-        else if (data.demoCode) { setError('Email OTP not configured. Use phone number instead.') }
-        else { setFpStep(2); setFpTimer(30) }
-      } catch { setError('Network error') }
-    }
+    } catch { setError('Network error') }
     setFpBusy(false)
   }
 
@@ -261,37 +193,21 @@ export function AuthScreen() {
     if (fpNewPw.length < 6) { setError('Password must be at least 6 characters'); return }
     setFpBusy(true)
 
-    if (fpType === 'phone' && fpConfirmationResult) {
-      // Firebase verify
-      try {
-        await fpConfirmationResult.confirm(fpOtp)
-        // Now reset password on server
-        const res = await fetch('/api/auth/forgot-password?action=reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: getFpFullContact(), code: 'firebase-verified', newPassword: fpNewPw }) })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) { setError(data?.error || 'Reset failed') }
-        else { setFpDone(true); setTimeout(() => { setTab('login'); setFpStep(1); setFpDone(false); setFpContact(''); setFpOtp(''); setFpNewPw('') }, 2000) }
-      } catch (e: any) { setError(e?.message || 'Invalid code') }
-    } else {
-      // Email server-side
-      try {
-        const res = await fetch('/api/auth/forgot-password?action=reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: getFpFullContact(), code: fpOtp, newPassword: fpNewPw }) })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) { setError(data?.error || 'Reset failed') }
-        else { setFpDone(true); setTimeout(() => { setTab('login'); setFpStep(1); setFpDone(false); setFpContact(''); setFpOtp(''); setFpNewPw('') }, 2000) }
-      } catch { setError('Network error') }
-    }
+    try {
+      const res = await fetch('/api/auth/forgot-password?action=reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: getFpFullContact(), code: fpOtp, newPassword: fpNewPw }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(data?.error || 'Reset failed') }
+      else { setFpDone(true); setTimeout(() => { setTab('login'); setFpStep(1); setFpDone(false); setFpContact(''); setFpOtp(''); setFpNewPw('') }, 2000) }
+    } catch { setError('Network error') }
     setFpBusy(false)
   }
 
   const resetRegister = () => {
-    setStep(1); setRegName(''); setRegContact(''); setOtpCode(''); setRegPw(''); setError(''); setOtpTimer(0); setConfirmationResult(null)
-    if ((window as any).recaptchaVerifier) { try { (window as any).recaptchaVerifier.clear() } catch {} (window as any).recaptchaVerifier = null }
+    setStep(1); setRegName(''); setRegContact(''); setOtpCode(''); setRegPw(''); setError(''); setOtpTimer(0)
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-950 p-4">
-      <div id="recaptcha-container"></div>
-
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">

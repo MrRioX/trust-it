@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { sendSms } from '@/lib/sms'
 
 // In-memory OTP store (for production, use Redis or DB table)
 const otpStore = new Map<string, { code: string; expires: number }>()
@@ -29,46 +30,17 @@ export async function POST(req: NextRequest) {
     const expires = Date.now() + 5 * 60 * 1000 // 5 minutes
     otpStore.set(idNorm, { code, expires })
 
-    // Send real OTP via SMS (Twilio) or Email (Resend)
+    // Send real OTP via SMS (Android SMS Gateway) or Email (Resend)
     let sent = false
     let sendError = ''
 
     if (type === 'phone') {
-      // === REAL SMS via Twilio ===
-      // Requires: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER env vars
-      const twilioSid = process.env.TWILIO_ACCOUNT_SID
-      const twilioToken = process.env.TWILIO_AUTH_TOKEN
-      const twilioFrom = process.env.TWILIO_PHONE_NUMBER
-
-      if (twilioSid && twilioToken && twilioFrom) {
-        try {
-          const twilioRes = await fetch(
-            `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': 'Basic ' + Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64'),
-                'Content-Type': 'application/x-www-form-urlencoded',
-              },
-              body: new URLSearchParams({
-                To: identifier.trim(),
-                From: twilioFrom,
-                Body: `Your Trust It verification code is: ${code}`,
-              }),
-            }
-          )
-          if (twilioRes.ok) {
-            sent = true
-          } else {
-            const errText = await twilioRes.text()
-            sendError = `Twilio error: ${errText.slice(0, 100)}`
-          }
-        } catch (e: any) {
-          sendError = e?.message || 'Twilio network error'
-        }
-      } else {
-        sendError = 'Twilio not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER env vars.'
-      }
+      // === Real SMS via self-hosted Android SMS Gateway (sms-gate.app) ===
+      // Requires: SMSGATE_USERNAME, SMSGATE_PASSWORD env vars.
+      // See src/lib/sms.ts for setup instructions.
+      const result = await sendSms(identifier.trim(), `Your Trust It verification code is: ${code}`)
+      sent = result.ok
+      sendError = result.error || ''
     } else if (type === 'email') {
       // === REAL Email via Resend ===
       // Requires: RESEND_API_KEY env var
@@ -121,7 +93,7 @@ export async function POST(req: NextRequest) {
       })
     } else {
       // Fallback: return code so the notification toast can show it
-      // (used when Twilio/Resend are not configured yet)
+      // (used when the SMS Gateway/Resend are not configured yet)
       console.warn('[OTP] Delivery failed, returning code for fallback:', sendError)
       return NextResponse.json({
         ok: true,
