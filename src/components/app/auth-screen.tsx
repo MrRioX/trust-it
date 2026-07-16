@@ -29,19 +29,12 @@ const COUNTRY_CODES = [
   { code: '+977', country: 'Nepal', flag: '🇳🇵' },
 ]
 
-// Reusable country code selector — always visible
 function CountryCodeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-[100px] bg-zinc-800 border-zinc-700 text-white flex-shrink-0">
-        <SelectValue />
-      </SelectTrigger>
+      <SelectTrigger className="w-[100px] bg-zinc-800 border-zinc-700 text-white flex-shrink-0"><SelectValue /></SelectTrigger>
       <SelectContent className="bg-zinc-800 border-zinc-700 max-h-60">
-        {COUNTRY_CODES.map((cc) => (
-          <SelectItem key={cc.code} value={cc.code} className="text-white">
-            <span className="mr-2">{cc.flag}</span> {cc.code}
-          </SelectItem>
-        ))}
+        {COUNTRY_CODES.map((cc) => (<SelectItem key={cc.code} value={cc.code} className="text-white"><span className="mr-2">{cc.flag}</span> {cc.code}</SelectItem>))}
       </SelectContent>
     </Select>
   )
@@ -51,12 +44,10 @@ export function AuthScreen() {
   const { login, register } = useApp()
   const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login')
 
-  // Login
   const [loginId, setLoginId] = useState('')
   const [loginPw, setLoginPw] = useState('')
   const [loginBusy, setLoginBusy] = useState(false)
 
-  // Register
   const [step, setStep] = useState(1)
   const [regName, setRegName] = useState('')
   const [regContact, setRegContact] = useState('')
@@ -67,9 +58,7 @@ export function AuthScreen() {
   const [regPw, setRegPw] = useState('')
   const [regBusy, setRegBusy] = useState(false)
   const [error, setError] = useState('')
-  const otpInputRef = useRef<HTMLInputElement>(null)
 
-  // Forgot password
   const [fpContact, setFpContact] = useState('')
   const [fpType, setFpType] = useState<'email' | 'phone'>('phone')
   const [fpCountryCode, setFpCountryCode] = useState('+91')
@@ -80,27 +69,16 @@ export function AuthScreen() {
   const [fpDone, setFpDone] = useState(false)
   const [fpTimer, setFpTimer] = useState(0)
 
-  useEffect(() => {
-    if (otpTimer > 0) { const t = setTimeout(() => setOtpTimer(otpTimer - 1), 1000); return () => clearTimeout(t) }
-  }, [otpTimer])
-  useEffect(() => {
-    if (fpTimer > 0) { const t = setTimeout(() => setFpTimer(fpTimer - 1), 1000); return () => clearTimeout(t) }
-  }, [fpTimer])
+  useEffect(() => { if (otpTimer > 0) { const t = setTimeout(() => setOtpTimer(otpTimer - 1), 1000); return () => clearTimeout(t) } }, [otpTimer])
+  useEffect(() => { if (fpTimer > 0) { const t = setTimeout(() => setFpTimer(fpTimer - 1), 1000); return () => clearTimeout(t) } }, [fpTimer])
 
   const isEmail = (val: string) => /^\S+@\S+\.\S+$/.test(val)
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoginBusy(true)
-    await login({ identifier: loginId, password: loginPw })
-    setLoginBusy(false)
+    e.preventDefault(); setLoginBusy(true); await login({ identifier: loginId, password: loginPw }); setLoginBusy(false)
   }
 
-  // === REGISTRATION ===
-  const getFullContact = () => {
-    if (contactType === 'email') return regContact.trim().toLowerCase()
-    return countryCode + regContact.replace(/\D/g, '')
-  }
+  const getFullContact = () => contactType === 'email' ? regContact.trim().toLowerCase() : countryCode + regContact.replace(/\D/g, '')
 
   const handleSendOtp = async () => {
     setError('')
@@ -109,23 +87,11 @@ export function AuthScreen() {
     setContactType(type)
     const fullContact = type === 'phone' ? countryCode + regContact.replace(/\D/g, '') : regContact.trim().toLowerCase()
     setRegBusy(true)
-
-    // === OTP via server (SMS Gateway for phone, Resend for email) ===
     try {
       const res = await fetch('/api/auth/send-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: fullContact, type }) })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setError(data?.error || 'Failed to send OTP')
-      } else if (data.demoCode) {
-        // Delivery service not configured — surface it rather than silently faking success
-        setError(
-          type === 'phone'
-            ? 'SMS Gateway not configured. Add SMSGATE_USERNAME/SMSGATE_PASSWORD on Vercel.'
-            : 'Email OTP service not configured. Add RESEND_API_KEY on Vercel, or use phone number instead.'
-        )
-      } else {
-        setStep(2); setOtpTimer(30)
-      }
+      if (!res.ok) { setError(data?.error || 'Failed to send OTP') }
+      else { setStep(2); setOtpTimer(30) }
     } catch { setError('Network error') }
     setRegBusy(false)
   }
@@ -134,7 +100,6 @@ export function AuthScreen() {
     setError('')
     if (otpCode.length !== 6) { setError('Please enter the 6-digit code'); return }
     setRegBusy(true)
-
     try {
       const res = await fetch('/api/auth/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: getFullContact(), code: otpCode }) })
       const data = await res.json().catch(() => ({}))
@@ -145,8 +110,7 @@ export function AuthScreen() {
   }
 
   const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
+    e.preventDefault(); setError('')
     if (regPw.length < 6) { setError('Password must be at least 6 characters'); return }
     setRegBusy(true)
     const email = contactType === 'email' ? getFullContact() : ''
@@ -155,11 +119,7 @@ export function AuthScreen() {
     setRegBusy(false)
   }
 
-  // === FORGOT PASSWORD ===
-  const getFpFullContact = () => {
-    if (fpType === 'email') return fpContact.trim().toLowerCase()
-    return fpCountryCode + fpContact.replace(/\D/g, '')
-  }
+  const getFpFullContact = () => fpType === 'email' ? fpContact.trim().toLowerCase() : fpCountryCode + fpContact.replace(/\D/g, '')
 
   const handleFpSendOtp = async () => {
     setError('')
@@ -168,21 +128,11 @@ export function AuthScreen() {
     setFpType(type)
     const fullContact = type === 'phone' ? fpCountryCode + fpContact.replace(/\D/g, '') : fpContact.trim().toLowerCase()
     setFpBusy(true)
-
     try {
       const res = await fetch('/api/auth/forgot-password?action=send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: fullContact, type }) })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setError(data?.error || 'Failed')
-      } else if (data.demoCode) {
-        setError(
-          type === 'phone'
-            ? 'SMS Gateway not configured. Add SMSGATE_USERNAME/SMSGATE_PASSWORD on Vercel.'
-            : 'Email OTP not configured. Use phone number instead.'
-        )
-      } else {
-        setFpStep(2); setFpTimer(30)
-      }
+      if (!res.ok) { setError(data?.error || 'Failed to send code') }
+      else { setFpStep(2); setFpTimer(30) }
     } catch { setError('Network error') }
     setFpBusy(false)
   }
@@ -192,7 +142,6 @@ export function AuthScreen() {
     if (fpOtp.length !== 6) { setError('Enter the 6-digit code'); return }
     if (fpNewPw.length < 6) { setError('Password must be at least 6 characters'); return }
     setFpBusy(true)
-
     try {
       const res = await fetch('/api/auth/forgot-password?action=reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: getFpFullContact(), code: fpOtp, newPassword: fpNewPw }) })
       const data = await res.json().catch(() => ({}))
@@ -202,14 +151,11 @@ export function AuthScreen() {
     setFpBusy(false)
   }
 
-  const resetRegister = () => {
-    setStep(1); setRegName(''); setRegContact(''); setOtpCode(''); setRegPw(''); setError(''); setOtpTimer(0)
-  }
+  const resetRegister = () => { setStep(1); setRegName(''); setRegContact(''); setOtpCode(''); setRegPw(''); setError(''); setOtpTimer(0) }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-950 p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-zinc-700 to-zinc-900 border border-zinc-700 flex items-center justify-center mb-4 shadow-2xl">
             <span className="text-5xl font-black text-white" style={{ fontFamily: 'Arial Black, sans-serif' }}>T</span>
@@ -227,11 +173,7 @@ export function AuthScreen() {
             </CardHeader>
             <CardContent>
               {fpDone ? (
-                <div className="text-center py-8">
-                  <Check className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                  <p className="text-emerald-400 font-medium">Password reset successfully!</p>
-                  <p className="text-zinc-500 text-sm mt-1">Redirecting to login…</p>
-                </div>
+                <div className="text-center py-8"><Check className="w-12 h-12 text-emerald-400 mx-auto mb-3" /><p className="text-emerald-400 font-medium">Password reset successfully!</p><p className="text-zinc-500 text-sm mt-1">Redirecting to login…</p></div>
               ) : fpStep === 1 ? (
                 <div className="space-y-4">
                   {error && <div className="text-sm text-rose-400 bg-rose-950/30 rounded-md p-2 border border-rose-900">{error}</div>}
@@ -275,7 +217,6 @@ export function AuthScreen() {
               <TabsTrigger value="register" className="data-[state=active]:bg-zinc-700 data-[state=active]:text-white text-zinc-400">Register</TabsTrigger>
             </TabsList>
 
-            {/* LOGIN */}
             <TabsContent value="login">
               <Card className="bg-zinc-900 border-zinc-800">
                 <CardContent className="pt-6">
@@ -295,7 +236,6 @@ export function AuthScreen() {
               </Card>
             </TabsContent>
 
-            {/* REGISTER */}
             <TabsContent value="register">
               <Card className="bg-zinc-900 border-zinc-800">
                 <CardHeader>
@@ -315,7 +255,6 @@ export function AuthScreen() {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="reg-contact" className="text-zinc-300">Email or Phone</Label>
-                        {/* Country code ALWAYS visible */}
                         <div className="flex gap-2">
                           <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
                           <div className="relative flex-1">
@@ -333,7 +272,7 @@ export function AuthScreen() {
                       <p className="text-sm text-zinc-400 text-center">Enter the 6-digit code sent to<br /><span className="text-white font-medium">{getFullContact()}</span></p>
                       <div className="space-y-2">
                         <Label htmlFor="otp" className="text-zinc-300">Verification Code</Label>
-                        <div className="relative"><KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" /><Input ref={otpInputRef} id="otp" type="text" inputMode="numeric" maxLength={6} value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" className="pl-9 bg-zinc-800 border-zinc-700 text-white text-center text-2xl tracking-[0.5em] font-mono" /></div>
+                        <div className="relative"><KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" /><Input id="otp" type="text" inputMode="numeric" maxLength={6} value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" className="pl-9 bg-zinc-800 border-zinc-700 text-white text-center text-2xl tracking-[0.5em] font-mono" /></div>
                       </div>
                       <Button onClick={handleVerifyOtp} disabled={regBusy || otpCode.length !== 6} className="w-full bg-zinc-700 hover:bg-zinc-600 text-white gap-1.5">{regBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Verify <Check className="w-4 h-4" /></>}</Button>
                       <div className="flex items-center justify-between">

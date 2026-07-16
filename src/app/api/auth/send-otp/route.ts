@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { sendSms } from '@/lib/sms'
 
-// In-memory OTP store (for production, use Redis or DB table)
 const otpStore = new Map<string, { code: string; expires: number }>()
 
 export async function POST(req: NextRequest) {
@@ -27,80 +25,92 @@ export async function POST(req: NextRequest) {
 
     // Generate 6-digit OTP
     const code = Math.floor(100000 + Math.random() * 900000).toString()
-    const expires = Date.now() + 5 * 60 * 1000 // 5 minutes
+    const expires = Date.now() + 5 * 60 * 1000
     otpStore.set(idNorm, { code, expires })
 
-    // Send real OTP via SMS (Android SMS Gateway) or Email (Resend)
     let sent = false
     let sendError = ''
 
     if (type === 'phone') {
-      // === Real SMS via self-hosted Android SMS Gateway (sms-gate.app) ===
-      // Requires: SMSGATE_USERNAME, SMSGATE_PASSWORD env vars.
-      // See src/lib/sms.ts for setup instructions.
-      const result = await sendSms(identifier.trim(), `Your Trust It verification code is: ${code}`)
-      sent = result.ok
-      sendError = result.error || ''
+      // === SMSGate ===
+      const smsgateUser = process.env.SMSGATE_USERNAME
+      const smsgatePass = process.env.SMSGATE_PASSWORD
+
+      if (!smsgateUser || !smsgatePass) {
+        return NextResponse.json({
+          error: 'SMS not configured. Add SMSGATE_USERNAME and SMSGATE_PASSWORD on Vercel, or use email instead.'
+        }, { status: 500 })
+      }
+
+      try {
+        const smsRes = await fetch('https://api.sms-gate.app/3rdparty/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + Buffer.from(`${smsgateUser}:${smsgatePass}`).toString('base64'),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: `Your Trust It verification code is: ${code}`,
+            phoneNumbers: [identifier.trim()],
+          }),
+        })
+
+        if (smsRes.ok || smsRes.status === 202) {
+          sent = true
+        } else {
+          // Get the EXACT error from SMSGate
+          const errText = await smsRes.text()
+          sendError = `SMSGate returned ${smsRes.status}: ${errText.slice(0, 300)}`
+          console.error('[SMSGate Error]', sendError)
+        }
+      } catch (e: any) {
+        sendError = `SMSGate network error: ${e?.message}`
+        console.error('[SMSGate Network Error]', e)
+      }
     } else if (type === 'email') {
-      // === REAL Email via Resend ===
-      // Requires: RESEND_API_KEY env var
+      // === Resend ===
       const resendKey = process.env.RESEND_API_KEY
 
-      if (resendKey) {
-        try {
-          const resendRes = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${resendKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              from: 'Trust It <noreply@resend.dev>',
-              to: [idNorm],
-              subject: 'Your Trust It Verification Code',
-              html: `
-                <div style="font-family: Arial, sans-serif; max-width: 400px; margin: 0 auto; padding: 20px;">
-                  <h2 style="color: #0a0a0a;">Trust It</h2>
-                  <p>Your verification code is:</p>
-                  <div style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #2196F3; text-align: center; padding: 20px; background: #f4f4f5; border-radius: 8px; margin: 16px 0;">
-                    ${code}
-                  </div>
-                  <p style="color: #666; font-size: 14px;">This code expires in 5 minutes. Do not share it with anyone.</p>
-                </div>
-              `,
-            }),
-          })
-          if (resendRes.ok) {
-            sent = true
-          } else {
-            const errText = await resendRes.text()
-            sendError = `Resend error: ${errText.slice(0, 100)}`
-          }
-        } catch (e: any) {
-          sendError = e?.message || 'Resend network error'
+      if (!resendKey) {
+        return NextResponse.json({
+          error: 'Email OTP not configured. Add RESEND_API_KEY on Vercel, or use phone instead.'
+        }, { status: 500 })
+      }
+
+      try {
+        const resendRes = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${resendKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: 'Trust It <noreply@resend.dev>',
+            to: [idNorm],
+            subject: 'Your Trust It Verification Code',
+            html: `<div style="font-family:Arial,sans-serif;max-width:400px;margin:0 auto;padding:20px;"><h2>Trust It</h2><p>Your verification code is:</p><div style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#2196F3;text-align:center;padding:20px;background:#f4f4f5;border-radius:8px;margin:16px 0;">${code}</div><p style="color:#666;font-size:14px;">This code expires in 5 minutes.</p></div>`,
+          }),
+        })
+
+        if (resendRes.ok) {
+          sent = true
+        } else {
+          const errText = await resendRes.text()
+          sendError = `Resend returned ${resendRes.status}: ${errText.slice(0, 200)}`
+          console.error('[Resend Error]', sendError)
         }
-      } else {
-        sendError = 'Resend not configured. Set RESEND_API_KEY env var.'
+      } catch (e: any) {
+        sendError = `Resend network error: ${e?.message}`
       }
     }
 
-    // If OTP was sent successfully, don't return the code
-    // If not sent (no API keys configured), return the code for demo/fallback
     if (sent) {
-      return NextResponse.json({
-        ok: true,
-        message: `OTP sent to ${idNorm}`,
-      })
+      return NextResponse.json({ ok: true, message: `OTP sent to ${idNorm}` })
     } else {
-      // Fallback: return code so the notification toast can show it
-      // (used when the SMS Gateway/Resend are not configured yet)
-      console.warn('[OTP] Delivery failed, returning code for fallback:', sendError)
       return NextResponse.json({
-        ok: true,
-        message: `OTP sent to ${idNorm}`,
-        demoCode: code, // Fallback: shown as notification if real delivery fails
-        deliveryError: sendError,
-      })
+        ok: false,
+        error: sendError || 'Failed to send OTP. Check server logs for details.',
+      }, { status: 500 })
     }
   } catch (e: any) {
     console.error('send-otp error', e)
@@ -108,5 +118,4 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Export for sharing with verify route
 export { otpStore }
