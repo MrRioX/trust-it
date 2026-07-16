@@ -79,3 +79,14 @@ model ChatBackground {
 
   @@unique([userId, roomId])
 }
+
+model Otp {
+  id        String   @id @default(cuid())
+  phone     String
+  code      String
+  verified  Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([phone, code])
+}

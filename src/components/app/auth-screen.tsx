@@ -80,8 +80,10 @@ export function AuthScreen() {
 
   const getFullContact = () => contactType === 'email' ? regContact.trim().toLowerCase() : countryCode + regContact.replace(/\D/g, '')
 
+  const [otpSentMsg, setOtpSentMsg] = useState<'success' | 'error' | null>(null)
+
   const handleSendOtp = async () => {
-    setError('')
+    setError(''); setOtpSentMsg(null)
     if (!regContact.trim()) { setError('Please enter your email or phone number'); return }
     const type = isEmail(regContact) ? 'email' : 'phone'
     setContactType(type)
@@ -90,9 +92,15 @@ export function AuthScreen() {
     try {
       const res = await fetch('/api/auth/send-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: fullContact, type }) })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) { setError(data?.error || 'Failed to send OTP') }
-      else { setStep(2); setOtpTimer(30) }
-    } catch { setError('Network error') }
+      if (!res.ok) {
+        setError(data?.error || 'Unable to send OTP. Retry later.')
+        setOtpSentMsg('error')
+      } else {
+        setStep(2); setOtpTimer(30)
+        setOtpSentMsg('success')
+        setTimeout(() => setOtpSentMsg(null), 3000)
+      }
+    } catch { setError('Unable to send OTP. Retry later.'); setOtpSentMsg('error') }
     setRegBusy(false)
   }
 
@@ -269,6 +277,11 @@ export function AuthScreen() {
 
                   {step === 2 && (
                     <div className="space-y-4">
+                      {otpSentMsg === 'success' && (
+                        <div className="flex items-center gap-2 text-emerald-400 bg-emerald-950/30 rounded-md p-3 border border-emerald-900">
+                          <Check className="w-4 h-4" /> <span className="text-sm font-medium">OTP Sent Successfully</span>
+                        </div>
+                      )}
                       <p className="text-sm text-zinc-400 text-center">Enter the 6-digit code sent to<br /><span className="text-white font-medium">{getFullContact()}</span></p>
                       <div className="space-y-2">
                         <Label htmlFor="otp" className="text-zinc-300">Verification Code</Label>
